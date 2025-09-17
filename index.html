@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Flash Cards — Date-wise (Copy) • v2 storage</title>
+<title>Flash Cards — Date-wise (App A)</title>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <style>
 :root{--bg:#0f1220;--card:#181c2f;--ink:#eef1ff;--muted:#9aa3c7;--line:#2a3052;--accent:#6ca8ff;--ok:#7bd88f;--bad:#ff7575}
@@ -66,14 +66,14 @@ hr{border:none;border-top:1px solid var(--line);margin:8px 0}
 </head>
 <body>
 <header>
-  <h1>Flash Cards — Date-wise (Copy)</h1>
+  <h1>Flash Cards — Date-wise (App A)</h1>
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <button id="addBtn" class="btn">＋ Add</button>
     <button id="exportBtn" class="btn">Export JSON</button>
     <label class="btn" style="cursor:pointer">Import JSON
       <input id="importInp" type="file" accept=".json,application/json" hidden>
     </label>
-    <span class="badge">This build uses v2 keys & DB; will auto-copy from v1 on first open.</span>
+    <span class="badge">Tap: Date → Event → Details → Place → Image → Audio</span>
   </div>
 </header>
 
@@ -82,7 +82,7 @@ hr{border:none;border-top:1px solid var(--line);margin:8px 0}
   <div id="sentinel"></div>
 </div>
 
-<footer><div class="badge">Media in IndexedDB (v2). Edits & deletes persist locally.</div></footer>
+<footer><div class="badge">Media in IndexedDB. Edits & deletes persist locally.</div></footer>
 
 <!-- START -->
 <div id="startScreen">
@@ -116,18 +116,16 @@ hr{border:none;border-top:1px solid var(--line);margin:8px 0}
 </div>
 
 <script>
-/* ====== DIFFERENT STORAGE KEYS & DB ====== */
-
-// ===== App A config =====
+/* ===== App A config ===== */
 const APP_NS  = 'appA';
-const JSON_URL = 'cards-a.json';        // optional
-const CHUNK    = 12;                    // cards per batch (infinite scroll)
+const JSON_URL = 'cards-a.json';       // optional base file
+const CHUNK    = 12;                   // cards per batch
 const LSK      = `flashcards_${APP_NS}_user`;
 const LSKD     = `flashcards_${APP_NS}_deleted`;
-const DB_NAME  = `flashcards_media_${APP_NS}`; // IndexedDB name
+const DB_NAME  = `flashcards_media_${APP_NS}`;
+const statesBase = ['date','event','details','place']; // <-- was missing
 
-
-/* ====== Elements ====== */
+/* ===== Elements ===== */
 const startBtn=document.getElementById('startBtn'), startScreen=document.getElementById('startScreen');
 const loadingEl=document.getElementById('loading'), errEl=document.getElementById('err');
 const timeline=document.getElementById('timeline'), sentinel=document.getElementById('sentinel');
@@ -138,20 +136,20 @@ const fImgUrls=document.getElementById('fImgUrls'), fAudUrls=document.getElement
 const chipsImg=document.getElementById('chipsImg'), chipsAud=document.getElementById('chipsAud');
 const cancelBtn=document.getElementById('cancelBtn'), saveBtn=document.getElementById('saveBtn');
 
-/* ====== Data ====== */
+/* ===== Data ===== */
 let master=[], pool=[], io=null;
 const delSet=new Set(JSON.parse(localStorage.getItem(LSKD)||'[]'));
 const cardSeq=new WeakMap();
 let editMode=false, editingObj=null, editImgs=[], editAuds=[];
 
-/* ====== IndexedDB helpers (parametric) ====== */
+/* ===== IndexedDB (parametric) ===== */
 function openDB(name){return new Promise((res,rej)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains('media'))db.createObjectStore('media',{keyPath:'id'});};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error||new Error('IDB open fail'));});}
 async function idbPutBlob(name,type,blob){const db=await openDB(name);const id=`${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;await new Promise((res,rej)=>{const tx=db.transaction('media','readwrite');tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.objectStore('media').put({id,type,mime:blob.type||'',created:Date.now(),blob});});db.close();return id;}
 async function idbGetBlob(name,id){const db=await openDB(name);const val=await new Promise((res,rej)=>{const tx=db.transaction('media','readonly');tx.onerror=()=>rej(tx.error);const g=tx.objectStore('media').get(id);g.onsuccess=()=>res(g.result);g.onerror=()=>rej(g.error);});db.close();if(!val)throw new Error('not found');return val.blob;}
 async function idbDelete(name,id){const db=await openDB(name);await new Promise((res,rej)=>{const tx=db.transaction('media','readwrite');tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.objectStore('media').delete(id);});db.close();}
 async function idbToDataURL(name,id){const b=await idbGetBlob(name,id);return await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(b);});}
 
-/* ====== Utils ====== */
+/* ===== Utils ===== */
 const pad=n=>(n<10?'0':'')+n, esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const toArr=v=>v==null?[]:(Array.isArray(v)?v:[v]);
 const el=(t,c,txt)=>{const e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e;};
@@ -161,52 +159,21 @@ function makeId(o){const k=[o.dateStr||'',o.event||'',o.details||'',o.place||'']
 function genUid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
 async function compressImageToBlob(file,maxDim=1280,quality=.72){const url=URL.createObjectURL(file);const img=await new Promise((r,j)=>{const i=new Image();i.onload=()=>r(i);i.onerror=j;i.src=url;});URL.revokeObjectURL(url);const sc=Math.min(1,maxDim/Math.max(img.width,img.height));const w=Math.round(img.width*sc),h=Math.round(img.height*sc);const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,w,h);return await new Promise(r=>c.toBlob(b=>r(b),'image/jpeg',quality));}
 
-/* ====== Normalize & storage ====== */
+/* ===== Normalize & storage ===== */
 function normalize(x,asLocal){const p=parseDDMMYYYY(x.date??x.Date??x['dd-mm-yyyy']??x.date_ddmmyyyy);if(!p)return{dateTs:null};const {ts,y,m,d}=p;const obj={dateTs:ts,dateStr:[pad(d),pad(m),y].join('-'),year:y,month:m,day:d,event:x.event??x.Event??x.title??x.Title??null,details:x.details??x.Details??x.desc??x.Description??null,place:x.place??x.Place??x.location??x.Location??null,images:x.images??x.image??null,audio:x.audio??x.audios??null};obj._id=makeId(obj);if(asLocal){obj._local=true;obj._uid=genUid();}return obj;}
 function readLocalAdds(){try{const a=JSON.parse(localStorage.getItem(LSK)||'[]');return Array.isArray(a)?a:[];}catch{return[]}}
 function saveLocalAdds(a){localStorage.setItem(LSK,JSON.stringify(a));}
 
-/* ====== Migration from v1 → v2 (runs once) ====== */
-async function migrateIfNeeded(){
-  const v2Existing = readLocalAdds();
-  const oldAdds = JSON.parse(localStorage.getItem(OLD_LSK)||'[]');
-  if(v2Existing.length || !Array.isArray(oldAdds) || oldAdds.length===0) return false;
-
-  const newOnes=[];
-  for(const prev of oldAdds){
-    const n={...prev}; // already normalized in v1 build
-    // move any idb: refs into the new DB
-    const imgs=[]; for(const u of toArr(n.images||n.image)){ if(typeof u==='string'&&u.startsWith('idb:')){ const id=u.slice(4); try{ const blob=await idbGetBlob(OLD_DB,id); const newId=await idbPutBlob(DB_NAME,'img',blob); imgs.push('idb:'+newId);}catch{}} else imgs.push(u); }
-    const auds=[]; for(const u of toArr(n.audio||n.audios)){ if(typeof u==='string'&&u.startsWith('idb:')){ const id=u.slice(4); try{ const blob=await idbGetBlob(OLD_DB,id); const newId=await idbPutBlob(DB_NAME,'aud',blob); auds.push('idb:'+newId);}catch{}} else auds.push(u); }
-    n.images=imgs.length?imgs:null; n.audio=auds.length?auds:null; n._local=true; n._uid=genUid(); newOnes.push(n);
-  }
-  const oldDel = JSON.parse(localStorage.getItem(OLD_LSKD)||'[]');
-  if(Array.isArray(oldDel) && !localStorage.getItem(LSKD)) localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  if(Array.isArray(oldDel) && !localStorage.getItem(LSKD)) localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  saveLocalAdds(newOnes);
-  if(!localStorage.getItem(LSKD)) localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  const mergedDel = Array.isArray(oldDel)?oldDel:[];
-  if(!(localStorage.getItem(LSKD))) localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  if(!localStorage.getItem(LSKD)) localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  if(!localStorage.getItem(LSKD)) localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  localStorage.setItem(LSKD, JSON.stringify(newOnes));
-  if(mergedDel.length) localStorage.setItem(LSKD.replace('user','deleted'), JSON.stringify(mergedDel));
-  alert(`Copied ${newOnes.length} cards from v1 to v2.`);
-  return true;
-}
-
-/* ====== Boot ====== */
+/* ===== Boot ===== */
 startBtn.addEventListener('click', init);
 async function init(){
   startBtn.disabled=true; loadingEl.style.display='block'; errEl.textContent='';
   try{
-    await migrateIfNeeded();
     let base=[]; try{const r=await fetch(JSON_URL,{cache:'no-store'}); if(r.ok) base=await r.json();}catch{}
     if(!Array.isArray(base)) base=[];
     const normBase=base.map(x=>normalize(x,false)).filter(x=>x.dateTs!=null);
     const localAdds=readLocalAdds();
-    const currentDel=new Set(JSON.parse(localStorage.getItem(LSKD.replace('user','deleted'))||'[]'));
+    const currentDel=new Set(JSON.parse(localStorage.getItem(LSKD)||'[]')); // use LSKD directly
     master = normBase.filter(x=>!currentDel.has(x._id)).concat(localAdds);
     sort(); refill(); startScreen.style.display='none'; setupIO(); loadMore();
   }catch(e){ loadingEl.style.display='none'; startBtn.disabled=false; errEl.textContent='Unable to start: '+e.message; }
@@ -216,7 +183,7 @@ function refill(){ pool = pool.concat(master); }
 function setupIO(){ if(io) io.disconnect(); io=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)) loadMore();},{root:null,rootMargin:'800px 0',threshold:0}); io.observe(sentinel); }
 function loadMore(){ if(pool.length<CHUNK) refill(); pool.splice(0,CHUNK).forEach(renderCard); }
 
-/* ====== Render / interactions (edit+delete kept) ====== */
+/* ===== Render / interactions ===== */
 function renderCard(d){
   const card=el('button','card'); card.dataset.idx="0";
   const pill=el('div','pill'); const front=el('div','side front'); const back=el('div','side back');
@@ -249,7 +216,7 @@ function renderChips(c,arr,kind){c.innerHTML=''; if(!arr.length){c.innerHTML='<s
 saveBtn.onclick=async()=>{ try{ modalErr.textContent=''; const p=parseDDMMYYYY(fDate.value.trim()); if(!p) throw new Error('Use dd-mm-yyyy (e.g., 26-01-1950)'); const {ts,y,m,d}=p; const imgUrls=splitUrls(fImgUrls.value), audUrls=splitUrls(fAudUrls.value); const idbImgs=[], idbAuds=[]; for(const file of [...(fImgFiles.files||[])]){ const blob=await compressImageToBlob(file); const id=await idbPutBlob(DB_NAME,'img',blob); idbImgs.push('idb:'+id); } for(const file of [...(fAudFiles.files||[])]){ const id=await idbPutBlob(DB_NAME,'aud',file); idbAuds.push('idb:'+id); } const updated={dateTs:ts,dateStr:[pad(d),pad(m),y].join('-'),year:y,month:m,day:d,event:(fEvent.value||'').trim()||null,details:(fDetails.value||'').trim()||null,place:(fPlace.value||'').trim()||null,images:[...editImgs,...imgUrls,...idbImgs],audio:[...editAuds,...audUrls,...idbAuds]}; updated._id=makeId(updated); if(editMode&&editingObj){ if(editingObj._local){ const adds=readLocalAdds(); const ix=adds.findIndex(x=>x._uid===editingObj._uid); if(ix>-1){ await cleanupRemoved(adds[ix],updated); adds[ix]={...adds[ix],...updated}; saveLocalAdds(adds);} Object.assign(editingObj,updated); }else{ delSet.add(editingObj._id); localStorage.setItem(LSKD, JSON.stringify([...delSet])); const clone={_local:true,_uid:genUid(),...updated}; const adds=readLocalAdds(); adds.push(clone); saveLocalAdds(adds); master=master.filter(x=>x!==editingObj).concat(clone); } } else { const newItem={_local:true,_uid:genUid(),...updated}; const adds=readLocalAdds(); adds.push(newItem); saveLocalAdds(adds); master.push(newItem); } sort(); rebuild(); modal.style.display='none'; }catch(e){ modalErr.textContent=e.message; } };
 
 /* Export / Import */
-exportBtn.onclick=async()=>{ const out=[]; for(const x of master){ const one={date:x.dateStr,event:x.event,details:x.details,place:x.place,images:[],audio:[]}; for(const u of toArr(x.images||x.image)){ if(typeof u==='string'&&u.startsWith('idb:')) one.images.push(await idbToDataURL(DB_NAME,u.slice(4))); else if(u) one.images.push(u);} for(const u of toArr(x.audio||x.audios)){ if(typeof u==='string'&&u.startsWith('idb:')) one.audio.push(await idbToDataURL(DB_NAME,u.slice(4))); else if(u) one.audio.push(u);} if(!one.images.length) delete one.images; if(!one.audio.length) delete one.audio; out.push(one);} const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='cards-export-v2.json'; a.click(); URL.revokeObjectURL(a.href); };
+exportBtn.onclick=async()=>{ const out=[]; for(const x of master){ const one={date:x.dateStr,event:x.event,details:x.details,place:x.place,images:[],audio:[]}; for(const u of toArr(x.images||x.image)){ if(typeof u==='string'&&u.startsWith('idb:')) one.images.push(await idbToDataURL(DB_NAME,u.slice(4))); else if(u) one.images.push(u);} for(const u of toArr(x.audio||x.audios)){ if(typeof u==='string'&&u.startsWith('idb:')) one.audio.push(await idbToDataURL(DB_NAME,u.slice(4))); else if(u) one.audio.push(u);} if(!one.images.length) delete one.images; if(!one.audio.length) delete one.audio; out.push(one);} const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='cards-export-appA.json'; a.click(); URL.revokeObjectURL(a.href); };
 importInp.onchange=async()=>{ const f=importInp.files?.[0]; if(!f)return; try{ const txt=await f.text(); const arr=JSON.parse(txt); if(!Array.isArray(arr)) throw new Error('JSON must be an array'); const newOnes=[]; for(const raw of arr){ const n=normalize(raw,true); if(!n.dateTs) continue; const imgs=[]; for(const u of toArr(n.images)){ if(typeof u==='string'&&u.startsWith('data:')){ const b=await (await fetch(u)).blob(); const id=await idbPutBlob(DB_NAME,'img',b); imgs.push('idb:'+id);} else imgs.push(u);} const auds=[]; for(const u of toArr(n.audio)){ if(typeof u==='string'&&u.startsWith('data:')){ const b=await (await fetch(u)).blob(); const id=await idbPutBlob(DB_NAME,'aud',b); auds.push('idb:'+id);} else auds.push(u);} n.images=imgs.length?imgs:null; n.audio=auds.length?auds:null; n._uid=genUid(); newOnes.push(n);} const adds=readLocalAdds(); adds.push(...newOnes); saveLocalAdds(adds); master=master.concat(newOnes); sort(); rebuild(); alert('Imported '+newOnes.length+' cards.'); }catch(e){ alert('Import failed: '+e.message); } importInp.value=''; };
 
 /* Rebuild */
