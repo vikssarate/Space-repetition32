@@ -117,15 +117,15 @@ hr{border:none;border-top:1px solid var(--line);margin:8px 0}
 
 <script>
 /* ====== DIFFERENT STORAGE KEYS & DB ====== */
-const JSON_URL='cards.json';
-const CHUNK=12;
-const statesBase=['date','event','details','place'];
-const LSK='flashcards_datewise_user_v2';
-const LSKD='flashcards_datewise_deleted_v2';
-const OLD_LSK='flashcards_datewise_user_v1';
-const OLD_LSKD='flashcards_datewise_deleted_v1';
-const DB_NAME='flashcards_media_db_v2';
-const OLD_DB='flashcards_media_db';
+
+// ===== App A config =====
+const APP_NS  = 'appA';
+const JSON_URL = 'cards-a.json';        // optional
+const CHUNK    = 12;                    // cards per batch (infinite scroll)
+const LSK      = `flashcards_${APP_NS}_user`;
+const LSKD     = `flashcards_${APP_NS}_deleted`;
+const DB_NAME  = `flashcards_media_${APP_NS}`; // IndexedDB name
+
 
 /* ====== Elements ====== */
 const startBtn=document.getElementById('startBtn'), startScreen=document.getElementById('startScreen');
