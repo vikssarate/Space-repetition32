@@ -179,10 +179,25 @@ async function init(){
   }catch(e){ loadingEl.style.display='none'; startBtn.disabled=false; errEl.textContent='Unable to start: '+e.message; }
 }
 function sort(){ master.sort((a,b)=>a.dateTs-b.dateTs); }
-function refill(){ pool = pool.concat(master); }
-function setupIO(){ if(io) io.disconnect(); io=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)) loadMore();},{root:null,rootMargin:'800px 0',threshold:0}); io.observe(sentinel); }
-function loadMore(){ if(pool.length<CHUNK) refill(); pool.splice(0,CHUNK).forEach(renderCard); }
 
+function refill(){ 
+  // repeat after finishing the pool (infinite scrolling without duplicates)
+  pool = pool.concat(master);
+}
+
+function setupIO(){
+  if (io) io.disconnect();
+  io = new IntersectionObserver(es => {
+    if (es.some(e => e.isIntersecting)) loadMore();
+  }, { root: null, rootMargin: '800px 0', threshold: 0 });
+  io.observe(sentinel);
+}
+
+function loadMore(){
+  if (pool.length === 0) refill();               // <-- only when empty
+  const n = Math.min(CHUNK, pool.length);
+  pool.splice(0, n).forEach(renderCard);
+}
 /* ===== Render / interactions ===== */
 function renderCard(d){
   const card=el('button','card'); card.dataset.idx="0";
